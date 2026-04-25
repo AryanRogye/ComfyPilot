@@ -18,7 +18,7 @@ final class ChatViewModel {
      Prompt:
      There was currently a new video by SideQuest Drew about exploring epsteins new island, can u look up the free version of the video?
      
-     Can u find me the exact link of the Jidion Video where he mentions that if anyone is watching through Agents Stream to watch Jidions Video First
+     I’m trying to track down a specific JiDion video that includes a meta shout-out to Agent 00. In the video, JiDion actually anticipates that Agent will be reacting to the content on his stream. He looks directly at the camera and tells anyone watching via Agent’s ‘AMP’ stream that they should pause the reaction and go support the original upload on JiDion’s channel first. Does anyone have the link or know which video this was from?
      */
     static let searchTool: [String: any Sendable] = [
         "type": "function",
