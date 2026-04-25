@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		9B5457992F9C311500D526D2 /* MLXKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9B5457982F9C311500D526D2 /* MLXKit */; };
+		9BDF1DD72F9D391B00915FE5 /* ComfyPilotUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9BDF1DD62F9D391B00915FE5 /* ComfyPilotUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9BDF1DD72F9D391B00915FE5 /* ComfyPilotUI in Frameworks */,
 				9B5457992F9C311500D526D2 /* MLXKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,6 +73,7 @@
 			name = ComfyPilot;
 			packageProductDependencies = (
 				9B5457982F9C311500D526D2 /* MLXKit */,
+				9BDF1DD62F9D391B00915FE5 /* ComfyPilotUI */,
 			);
 			productName = ComfyPilot;
 			productReference = 9B5457892F9C30CF00D526D2 /* ComfyPilot.app */;
@@ -102,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9B5457972F9C311500D526D2 /* XCLocalSwiftPackageReference "../../../Projects/MLXKit" */,
+				9BDF1DD52F9D391B00915FE5 /* XCLocalSwiftPackageReference "ComfyPilotUI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9B54578A2F9C30CF00D526D2 /* Products */;
@@ -366,12 +370,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../../Projects/MLXKit;
 		};
+		9BDF1DD52F9D391B00915FE5 /* XCLocalSwiftPackageReference "ComfyPilotUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ComfyPilotUI;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		9B5457982F9C311500D526D2 /* MLXKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MLXKit;
+		};
+		9BDF1DD62F9D391B00915FE5 /* ComfyPilotUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ComfyPilotUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

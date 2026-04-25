@@ -74,6 +74,7 @@ private struct AppKitTextView: NSViewRepresentable {
         nsView.updateMeasuredHeight()
     }
     
+    @MainActor
     final class Coordinator {
         var text: Binding<String>
         var height: Binding<CGFloat>

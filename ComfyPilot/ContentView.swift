@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import ComfyPilotUI
 import MLXKit
 
 struct ContentView: View {
@@ -28,7 +29,7 @@ struct ContentView: View {
             VStack {
                 ChatListView(chatVM: vm)
                     .safeAreaInset(edge: .bottom) {
-                        BottomBar(sendingMessage: $sendingMessage) { text in
+                        ChatInputBar(sendingMessage: $sendingMessage) { text in
                             vm.send(text)
                         }
                         

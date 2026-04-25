@@ -1,8 +1,8 @@
 //
-//  BottomBar.swift
-//  ComfyPilot
+//  ChatInputBar.swift
+//  ComfyPilotUI
 //
-//  Created by Aryan Rogye on 4/24/26.
+//  Created by Aryan Rogye on 4/25/26.
 //
 
 import SwiftUI
@@ -10,13 +10,21 @@ import SwiftUI
 import AppKit
 #endif
 
-struct BottomBar: View {
+public struct ChatInputBar: View {
     
     @Binding var sendingMessage : Bool
     var onTextSend: (String) -> Void
     
     @State private var text: String = ""
     @State private var isFocused = false
+    
+    public init(
+        sendingMessage: Binding<Bool>,
+        onTextSend: @escaping (String) -> Void
+    ) {
+        self._sendingMessage = sendingMessage
+        self.onTextSend = onTextSend
+    }
     
     var horizontalPadding: CGFloat {
 #if os(iOS)
@@ -34,7 +42,7 @@ struct BottomBar: View {
 #endif
     }
     
-    var body: some View {
+    public var body: some View {
         HStack(alignment: .center, spacing: 10) {
             plusButton
             
@@ -182,7 +190,7 @@ private struct TalkToModelButton: View {
 
 
 #Preview {
-    BottomBar(sendingMessage: .constant(false)) { text in
+    ChatInputBar(sendingMessage: .constant(false)) { text in
         
     }
 }
