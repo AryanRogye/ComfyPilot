@@ -14,6 +14,48 @@ import MLXKit
 @Observable
 final class ChatViewModel {
     
+    /**
+     Prompt:
+     There was currently a new video by SideQuest Drew about exploring epsteins new island, can u look up the free version of the video?
+     
+     Can u find me the exact link of the Jidion Video where he mentions that if anyone is watching through Agents Stream to watch Jidions Video First
+     */
+    static let searchTool: [String: any Sendable] = [
+        "type": "function",
+        "function": [
+            "name": "search",
+            "description": "Search the web for information",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "query": [
+                        "type": "string",
+                        "description": "The search query"
+                    ] as [String: any Sendable]
+                ] as [String: any Sendable],
+                "required": ["query"]
+            ] as [String: any Sendable]
+        ] as [String: any Sendable]
+    ]
+    
+    static let clickLinkTool: [String: any Sendable] = [
+        "type": "function",
+        "function": [
+            "name": "clickLink",
+            "description": "Open one of the numbered links from the current browser page.",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "index": [
+                        "type": "integer",
+                        "description": "The 1-based number of the link to open from the current page's Links list."
+                    ] as [String: any Sendable]
+                ] as [String: any Sendable],
+                "required": ["index"]
+            ] as [String: any Sendable]
+        ] as [String: any Sendable]
+    ]
+    
     var messages: [ChatMessage] = []
     var sendingMessage = false
     var error: String?
@@ -75,6 +117,10 @@ final class ChatViewModel {
                 
                 let _ = try await mlxModelChatVM.getResponse(
                     messages: modelMessages,
+                    tools: [
+                        Self.searchTool,
+                        Self.clickLinkTool
+                    ],
                     completion: { [weak self] (snippet: String) in
                         guard let self else { return }
                         Task { @MainActor in
@@ -181,6 +227,10 @@ final class ChatViewModel {
         
         let _ = try await mlxModelChatVM.getResponse(
             messages: modelMessages,
+            tools: [
+                Self.searchTool,
+                Self.clickLinkTool
+            ],
             completion: { [weak self] (snippet: String) in
                 guard let self else { return }
                 Task { @MainActor in
