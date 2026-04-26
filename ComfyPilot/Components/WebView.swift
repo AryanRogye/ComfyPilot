@@ -9,40 +9,66 @@ import SwiftUI
 import WebKit
 
 struct WebView: NSViewRepresentable {
-
+    
     let url: URL
     var onPageLoaded: (URL?, String, String, [URL]) -> Void
-
+    var onLiveHTMLReady: (((@escaping () async -> String) -> Void))? = nil
+    
     func makeCoordinator() -> Coordinator {
         Coordinator(onPageLoaded: onPageLoaded)
     }
-
+    
     func makeNSView(context: Context) -> WKWebView {
         let webView = WKWebView()
         webView.navigationDelegate = context.coordinator
+        
+        context.coordinator.webView = webView
         context.coordinator.lastLoadedURL = url
+        
+        onLiveHTMLReady?(context.coordinator.currentHTML)
+        
         webView.load(URLRequest(url: url))
         return webView
     }
-
+    
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onPageLoaded = onPageLoaded
+        
         guard context.coordinator.lastLoadedURL != url else { return }
         context.coordinator.lastLoadedURL = url
         webView.load(URLRequest(url: url))
     }
-
+    
     final class Coordinator: NSObject, WKNavigationDelegate {
         var onPageLoaded: (URL?, String, String, [URL]) -> Void
         var lastLoadedURL: URL?
-
+        weak var webView: WKWebView?
+        
         init(onPageLoaded: @escaping (URL?, String, String, [URL]) -> Void) {
             self.onPageLoaded = onPageLoaded
         }
-
+        
+        @MainActor
+        func currentHTML() async -> String {
+            guard let webView else {
+                return "No active web view."
+            }
+            
+            return await withCheckedContinuation { continuation in
+                webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
+                    if let html = result as? String {
+                        continuation.resume(returning: html)
+                    } else {
+                        continuation.resume(returning: "Could not read current page HTML.")
+                    }
+                }
+            }
+        }
+        
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             let currentURL = webView.url
             lastLoadedURL = currentURL
-
+            
             webView.evaluateJavaScript(Self.pageSnapshotJavaScript) { [weak self] result, _ in
                 guard
                     let snapshot = result as? [String: Any],
@@ -50,15 +76,16 @@ struct WebView: NSViewRepresentable {
                     let text = snapshot["text"] as? String,
                     let rawLinks = snapshot["links"] as? [[String: String]]
                 else { return }
-
+                
                 let links: [URL] = rawLinks.compactMap { link in
                     guard let href = link["href"] else { return nil }
                     return URL(string: href)
                 }
+                
                 self?.onPageLoaded(currentURL, title, String(text.prefix(8_000)), links)
             }
         }
-
+        
         private static let pageSnapshotJavaScript = """
         (() => {
             const title = document.title || "";
@@ -73,7 +100,7 @@ struct WebView: NSViewRepresentable {
             const linkText = links
                 .map((link, index) => `${index + 1}. ${link.label}\\n${link.href}`)
                 .join("\\n");
-
+        
             return {
                 title,
                 text: `${visibleText}\\n\\nLinks on this page:\\n${linkText}`,

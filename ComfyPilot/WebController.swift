@@ -11,7 +11,7 @@ struct WebTab: Identifiable, Equatable {
     let id: UUID
     var title: String
     var url: URL
-    var html: String
+    var markdown: String
     var links: [URL]
 
     init(
@@ -24,7 +24,7 @@ struct WebTab: Identifiable, Equatable {
         self.id = id
         self.title = title
         self.url = url
-        self.html = html
+        self.markdown = html
         self.links = links
     }
 }
@@ -37,6 +37,8 @@ final class WebController {
     var selectedTabID: UUID?
 
     private var pendingContinuation: (tabID: UUID, continuation: CheckedContinuation<String, Never>)?
+    
+    var requestLiveHTML: [UUID: () async -> String] = [:]
 
     var selectedTab: WebTab? {
         guard let selectedTabID else { return tabs.first }
@@ -49,8 +51,8 @@ final class WebController {
     }
 
     var html: String {
-        get { selectedTab?.html ?? "" }
-        set { updateSelectedTab { $0.html = newValue } }
+        get { selectedTab?.markdown ?? "" }
+        set { updateSelectedTab { $0.markdown = newValue } }
     }
 
     var links: [URL] {
@@ -70,7 +72,7 @@ final class WebController {
                 $0.url = newURL
             }
             $0.title = title.isEmpty ? displayTitle(for: $0.url) : title
-            $0.html = html
+            $0.markdown = html
             $0.links = links
         }
 
@@ -109,18 +111,38 @@ final class WebController {
             selectedTabID = tabs.first?.id
         }
     }
-
-    func loadSearchHTML(for query: String) async -> String {
-        let tabID = selectedTab?.id
-
-        return await withCheckedContinuation { continuation in
-            if let tabID {
-                pendingContinuation = (tabID, continuation)
-                navigateSelectedTab(to: query)
-            } else {
-                continuation.resume(returning: "No active tab.")
-            }
+    
+    func loadCurrentHTML() async -> String {
+        guard let tabID = selectedTab?.id else {
+            return "No active tab."
         }
+        
+        if let getter = requestLiveHTML[tabID] {
+            let html = await getter()
+            self.html = html
+            return html
+        }
+        
+        return html.isEmpty ? "No HTML loaded for current page." : html
+    }
+    
+    func fetchMarkdown(for url: URL) async -> String {
+        let jinaURL = URL(string: "https://r.jina.ai/\(url.absoluteString)")!
+        var request = URLRequest(url: jinaURL)
+        request.setValue("text/markdown", forHTTPHeaderField: "Accept")
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
+        }
+    }
+    
+    func loadSearchHTML(for query: String) async -> String {
+        let searchURL = searchURL(for: query)
+        navigateSelectedTab(to: query)  // still navigate the browser visually
+        return await fetchMarkdown(for: searchURL)  // but get content from Jina
     }
 
     func loadLinkHTML(at index: Int) async -> String {
@@ -129,16 +151,9 @@ final class WebController {
         guard currentLinks.indices.contains(linkIndex) else {
             return "No link exists at index \(index)."
         }
-        let tabID = selectedTab?.id
-
-        return await withCheckedContinuation { continuation in
-            if let tabID {
-                pendingContinuation = (tabID, continuation)
-                url = currentLinks[linkIndex]
-            } else {
-                continuation.resume(returning: "No active tab.")
-            }
-        }
+        let linkURL = currentLinks[linkIndex]
+        url = linkURL
+        return await fetchMarkdown(for: linkURL)
     }
 
     func navigateSelectedTab(to query: String) {

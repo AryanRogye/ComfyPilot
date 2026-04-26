@@ -53,6 +53,9 @@ struct Root: View {
             vm.onClickLink = { index in
                 await webController.loadLinkHTML(at: index)
             }
+            vm.onGetCurrentHTMLContent = {
+                await webController.loadCurrentHTML()
+            }
         }
         .onChange(of: loaderService.selected) { _, newValue in
             if let newValue {
@@ -89,6 +92,9 @@ struct Root: View {
                     url: tab.url,
                     onPageLoaded: { url, title, html, links in
                         webController.didLoadPage(for: tab.id, url: url, title: title, html: html, links: links)
+                    },
+                    onLiveHTMLReady: { getter in
+                        webController.requestLiveHTML[tab.id] = getter
                     }
                 )
                 .opacity(webController.selectedTabID == tab.id ? 1 : 0)

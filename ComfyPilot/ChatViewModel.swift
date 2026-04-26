@@ -8,6 +8,7 @@
 import Foundation
 import MLXLMCommon
 import MLXKit
+import AppKit
 
 
 @MainActor
@@ -29,9 +30,13 @@ final class ChatViewModel {
     /// Callback the agent's use based off of the toolcall
     var onSearch: ((String) async -> String)?
     var onClickLink: ((Int) async -> String)?
+    var onGetCurrentHTMLContent: (() async -> String)?
     
     /// Link Pattern lets us know if in a String what all of the urls are
     public static let linkPattern = #"\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)"#
+    
+    private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
     
     /**
      * Internal Service lets us talk to the MLX Model thats loaded
@@ -42,175 +47,38 @@ final class ChatViewModel {
      * Computed Property to know if the MLX model is
      * loaded or not
      */
-    var isLoaded: Bool {
+    public var isLoaded: Bool {
         mlxChatService.isLoaded
     }
-
-    private func handleToolCall(
-        _ response: ToolCallResponse,
-        depth: Int = 0
-    ) async throws {
-        
-        let maxDepth = 3
-        
-        guard depth < maxDepth else {
-            return
-        }
-        
-        let function = response.functionName
-        
-        messages.append(
-            ToolMessage(
-                functionName: response.functionName,
-                arguments: response.arguments
-            )
-        )
-        
-        switch function {
-        case "clickLink":
-            if case .int(let index) = response.arguments["index"] {
-                let args = ClickTookArguments(index: index)
-                if let html = await onClickLink?(args.index) {
-                    try await respondToToolResult(
-                        html,
-                        label: "clicked on",
-                        depth: depth
-                    )
-                }
-            }
-        case "search":
-            if case .string(let query) = response.arguments["query"] {
-                let args = SearchToolArguments(query: query)
-                if let html = await onSearch?(args.query) {
-                    try await respondToToolResult(
-                        html,
-                        label: "searched",
-                        depth: depth
-                    )
-                }
-            }
-        default:
-            break
-        }
-    }
     
-    private func respondToToolResult(
-        _ html: String,
-        label: String,
-        depth: Int
-    ) async throws {
-        let message = ChatMessage(
-            role: .user,
-            content: """
-                    This is the content of what you \(label):
-                    \(html)
-                    
-                    Use this information to answer the question.
-                    If it's not enough, you may search again.
-                    If you need to open one of the links, call clickLink with the link number.
-                    """
-        )
-        
-        let assistantID = UUID()
-        var modelMessages = messages
-            .filter { $0.id != assistantID }
-            .compactMap { $0 as? ChatMessage }
-            .map { ModelMessage(role: $0.role, content: $0.content) }
-        
-        modelMessages.append(ModelMessage(role: message.role, content: message.content))
-        
-        let _ = try await mlxChatService.getResponse(
-            messages: modelMessages,
-            tools: [
-                Self.searchTool,
-                Self.clickLinkTool
-            ],
-            completion: { [weak self] (snippet: String) in
-                guard let self else { return }
-                Task { @MainActor in
-                    self.appendToAssistantMessage(
-                        id: assistantID,
-                        chunk: snippet
-                    )
-                }
-            },
-            toolcallCompletionHandler: { toolcallResponse in
-                Task { @MainActor in
-                    try await self.handleToolCall(toolcallResponse, depth: depth + 1)
-                }
-            }
-        )
-    }
+    public init() {}
     
-    // MARK: - Helpers
-    
-    /**
-     * Function adds a message as a role user
-     */
-    private func addUserMessage(_ content: String) {
-        let userMessage = ChatMessage(
-            role: .user,
-            content: content
-        )
-        messages.append(userMessage)
-    }
-    
-    /**
-     * Function Appends to assistant method if
-     * the message doesnt exist yet, it creates it as we go
-     * this is important
-     */
-    private func appendToAssistantMessage(id: UUID, chunk: String) {
-        if let index = messages.firstIndex(where: { $0.id == id }) {
-            let message = messages[index]
-            if var m = message as? ChatMessage {
-                m.content += chunk
-                messages[index] = m
-            }
-        } else {
-            messages.append(
-                ChatMessage(
-                    id: id,
-                    role: .assistant,
-                    content: chunk
-                )
-            )
-        }
-    }
-    
-    private func removeAssistantMessageIfEmpty(id: UUID) {
-        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        let message = messages[index]
-        if let m = message as? ChatMessage {
-            if m.content.isEmpty {
-                messages.remove(at: index)
-            }
-        }
-    }
-    
-    private func message(for error: MLXModelChatVideoModelError) -> String {
-        switch error {
-        case .modelDoesntExist:
-            return "Model Doesnt Exist"
-        case .errorWhileLoadingContainer(let string):
-            return "Error While Loading Container: \(string)"
-        case .containerNotConfigured:
-            return "Container Not Configured"
-        case .cantGenerateResponseNotLoaded:
-            return "Not Loaded Cant Generate Response"
-        }
+    @MainActor
+    deinit {
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
     }
 }
 
 // MARK: - Loading Model
 extension ChatViewModel {
+    static let systemPrompt = """
+                              You are a Assistant in a Browser Called ComfyPilot, Your job
+                              is to help the user with anything they may need
+                              """
+    
+    
     /**
      * Loads The Model based off the URL provided
      * sets error flags if anything goes wrong
      */
     public func load(_ url: URL) async {
         do {
-            try await mlxChatService.loadModel(at: url)
+            try await mlxChatService.loadModel(
+                at: url,
+                defaultPrompt: Self.systemPrompt
+            )
+            setupObserversIfNeeded()
         } catch {
             self.error = error.localizedDescription
             showError = true
@@ -261,16 +129,18 @@ extension ChatViewModel {
                  * This removes the current assistant message you're about
                  * to stream into
                  */
-                let modelMessages = messages
+                var modelMessages = messages
                     .filter { $0.id != assistantID }
                     .compactMap { $0 as? ChatMessage }
                     .map { ModelMessage(role: $0.role, content: $0.content) }
+//                modelMessages.insert(ModelMessage(role: .system, content: Self.systemPrompt), at: 0)
                 
                 let _ = try await mlxChatService.getResponse(
                     messages: modelMessages,
                     tools: [
                         Self.searchTool,
-                        Self.clickLinkTool
+                        Self.clickLinkTool,
+                        Self.requestCurrentPageHTML
                     ],
                     completion: { [weak self] (snippet: String) in
                         guard let self else { return }
@@ -304,6 +174,7 @@ extension ChatViewModel {
     }
 }
 
+// MARK: - Tools
 extension ChatViewModel {
     /**
      This section is my prompts that I use to get a toolcall to activate, most of these require searching
@@ -350,4 +221,250 @@ extension ChatViewModel {
             ] as [String: any Sendable]
         ] as [String: any Sendable]
     ]
+    
+    static let requestCurrentPageHTML: [String: any Sendable] = [
+        "type": "function",
+        "function": [
+            "name": "requestCurrentPageHTML",
+            "description": """
+                           Retrieves the markdown content of the web page currently open in the user's browser.
+                           
+                           IMPORTANT: Call this tool automatically and immediately whenever:
+                           - The user mentions "this page", "current page", "this site", "what I'm looking at"
+                           - The user asks ANY question that could relate to browser content
+                           - The user says they are on a new page or has navigated somewhere
+                           - You are unsure what page the user is on
+                           
+                           Do NOT ask the user for the URL or page content.
+                           Do NOT ask for permission to access the page.
+                           Do NOT wait for the user to describe the page.
+                           Just call this tool first, then answer based on the result.
+                           """,
+            "parameters": [
+                "type": "object",
+                /// we use [:] because its just a singular call ()
+                "properties": [:] as [String: any Sendable],
+                "required": []
+            ] as [String: any Sendable]
+        ] as [String: any Sendable]
+    ]
+}
+
+// MARK: - Handle Tool Calls
+extension ChatViewModel {
+    private func handleToolCall(
+        _ response: ToolCallResponse,
+        depth: Int = 0
+    ) async throws {
+        
+        let maxDepth = 3
+        
+        guard depth < maxDepth else {
+            return
+        }
+        
+        let function = response.functionName
+        
+        messages.append(
+            ToolMessage(
+                functionName: response.functionName,
+                arguments: response.arguments
+            )
+        )
+        
+        switch function {
+        case "requestCurrentPageHTML":
+            let html = await onGetCurrentHTMLContent?() ?? "No HTML available"
+            try await respondToToolResult(
+                html,
+                label: "requested to get the html of",
+                depth: depth
+            )
+        case "clickLink":
+            if case .int(let index) = response.arguments["index"] {
+                let args = ClickTookArguments(index: index)
+                if let html = await onClickLink?(args.index) {
+                    try await respondToToolResult(
+                        html,
+                        label: "clicked on",
+                        depth: depth
+                    )
+                }
+            }
+        case "search":
+            if case .string(let query) = response.arguments["query"] {
+                let args = SearchToolArguments(query: query)
+                if let html = await onSearch?(args.query) {
+                    try await respondToToolResult(
+                        html,
+                        label: "searched",
+                        depth: depth
+                    )
+                }
+            }
+        default:
+            break
+        }
+    }
+    
+    private func respondToToolResult(
+        _ html: String,
+        label: String,
+        depth: Int
+    ) async throws {
+        print("")
+        let message = ChatMessage(
+            role: .user,
+            content: """
+                    This is the content of what you \(label):
+                    \(html)
+                    
+                    Use this information to answer the question.
+                    If it's not enough, you may search again.
+                    If you need to open one of the links, call clickLink with the link number.
+                    """
+        )
+        
+        let assistantID = UUID()
+        var modelMessages = messages
+            .filter { $0.id != assistantID }
+            .compactMap { $0 as? ChatMessage }
+            .map { ModelMessage(role: $0.role, content: $0.content) }
+        
+        modelMessages.append(ModelMessage(role: message.role, content: message.content))
+//        modelMessages.insert(ModelMessage(role: .system, content: Self.systemPrompt), at: 0)
+        
+        let _ = try await mlxChatService.getResponse(
+            messages: modelMessages,
+            tools: [
+                Self.searchTool,
+                Self.clickLinkTool,
+                Self.requestCurrentPageHTML
+            ],
+            completion: { [weak self] (snippet: String) in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.appendToAssistantMessage(
+                        id: assistantID,
+                        chunk: snippet
+                    )
+                }
+            },
+            toolcallCompletionHandler: { toolcallResponse in
+                Task { @MainActor in
+                    try await self.handleToolCall(toolcallResponse, depth: depth + 1)
+                }
+            }
+        )
+    }
+}
+
+// MARK: - Observers
+extension ChatViewModel {
+    /**
+     * Function sets up observed if their not already set
+     */
+    internal func setupObserversIfNeeded() {
+        guard backgroundObserver == nil else { return }
+        guard foregroundObserver == nil else { return }
+        
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.mlxChatService.unload()
+            }
+        }
+        
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                do {
+                    try await self.mlxChatService.reload()
+                } catch let e as MLXModelChatVideoModelError {
+                    self.error = self.message(for: e)
+                    self.showError = true
+                } catch {
+                    self.error = error.localizedDescription
+                    self.showError = true
+                }
+            }
+        }
+    }
+
+}
+
+// MARK: - Helpers
+extension ChatViewModel {
+    /**
+     * Function adds a message as a role user
+     */
+    private func addUserMessage(_ content: String) {
+        let userMessage = ChatMessage(
+            role: .user,
+            content: content
+        )
+        messages.append(userMessage)
+    }
+    
+    /**
+     * Function Appends to assistant method if
+     * the message doesnt exist yet, it creates it as we go
+     * this is important
+     */
+    private func appendToAssistantMessage(id: UUID, chunk: String) {
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            let message = messages[index]
+            if var m = message as? ChatMessage {
+                m.content += chunk
+                messages[index] = m
+            }
+        } else {
+            messages.append(
+                ChatMessage(
+                    id: id,
+                    role: .assistant,
+                    content: chunk
+                )
+            )
+        }
+    }
+    
+    /**
+     * Removes Assistant Message If Empty
+     */
+    private func removeAssistantMessageIfEmpty(id: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        let message = messages[index]
+        if let m = message as? ChatMessage {
+            if m.content.isEmpty {
+                messages.remove(at: index)
+            }
+        }
+    }
+
+    /**
+     * Function Handles Errors For Us
+     */
+    internal func message(for error: MLXModelChatVideoModelError) -> String {
+        switch error {
+        case .modelDoesntExist:
+            return "Model Doesnt Exist"
+        case .errorWhileLoadingContainer(let string):
+            return "Error While Loading Container: \(string)"
+        case .containerNotConfigured:
+            return "Container Not Configured"
+        case .cantGenerateResponseNotLoaded:
+            return "Not Loaded Cant Generate Response"
+        case .cantReload(let reason):
+            return "Cant Reload: \(reason)"
+        }
+    }
 }
