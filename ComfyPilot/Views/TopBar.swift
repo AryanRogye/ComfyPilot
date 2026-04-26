@@ -9,15 +9,18 @@ import SwiftUI
 
 struct TopBar: View {
     
+    @Bindable var webController: WebController
     @State private var search: String = ""
     
     var body: some View {
         HStack {
-            TextField("", text: $search)
+            TextField(currentAddress, text: $search)
                 .textFieldStyle(.plain)
                 .onSubmit {
-                    if search.isEmpty { return }
-//                    browserVM.createTab(search)
+                    let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    webController.navigateSelectedTab(to: trimmed)
+                    search = ""
                 }
             Spacer()
             Text("Middle")
@@ -34,5 +37,9 @@ struct TopBar: View {
                 topTrailingRadius: 8
             )
         )
+    }
+    
+    private var currentAddress: String {
+        webController.selectedTab?.url.absoluteString ?? "Search or enter website"
     }
 }

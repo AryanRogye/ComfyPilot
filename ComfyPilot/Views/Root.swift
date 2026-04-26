@@ -15,28 +15,28 @@ struct Root: View {
     @State private var webController = WebController()
     @State private var sendingMessage = false
     @State private var loading = false
-    
+
     @State private var showingSidebar = false
     @State private var showingChat = false
-    
+
     var body: some View {
         ZStack {
             MeshGradientView()
-            
+
             HStack {
                 sidebar
-                
+
                 VStack(spacing: 0) {
-                    TopBar()
-                    
+                    TopBar(webController: webController)
+
                     webView
                 }
                 .frame(minWidth: 420)
-                
+
                 chatSidebar
             }
             .padding(8)
-            
+
         }
         .titlebarAppearsTransparent()
         /// this is if we load a model on start
@@ -49,7 +49,7 @@ struct Root: View {
             vm.onSearch = { query in
                 await webController.loadSearchHTML(for: query)
             }
-            
+
             vm.onClickLink = { index in
                 await webController.loadLinkHTML(at: index)
             }
@@ -81,19 +81,20 @@ struct Root: View {
             )
         }
     }
-    
+
     private var webView: some View {
-        WebView(
-            url: webController.url,
-            html: Binding(
-                get: { webController.html },
-                set: { webController.didLoadHTML($0) }
-            ),
-            links: Binding(
-                get: { webController.links },
-                set: { webController.links = $0 }
-            )
-        )
+        ZStack {
+            ForEach(webController.tabs) { tab in
+                WebView(
+                    url: tab.url,
+                    onPageLoaded: { url, title, html, links in
+                        webController.didLoadPage(for: tab.id, url: url, title: title, html: html, links: links)
+                    }
+                )
+                .opacity(webController.selectedTabID == tab.id ? 1 : 0)
+                .allowsHitTesting(webController.selectedTabID == tab.id)
+            }
+        }
         .clipShape(
             .rect(
                 bottomLeadingRadius: 8,
@@ -101,16 +102,16 @@ struct Root: View {
             )
         )
     }
-    
+
     @ViewBuilder
     private var sidebar: some View {
         if showingSidebar {
-            Sidebar()
+            Sidebar(webController: webController)
                 .frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
                 .transition(.move(edge: .leading))
         }
     }
-    
+
     @ViewBuilder
     private var chatSidebar: some View {
         if showingChat {
@@ -122,17 +123,17 @@ struct Root: View {
             .transition(.move(edge: .trailing))
         }
     }
-    
+
     /**
      * Helper to load model once a model is selected
      */
     private func loadModel(model: MLXChatModel) {
         if loading { return }
-        
+
         Task {
             loading = true
             defer { loading = false }
-            
+
             await vm.load(model.url)
         }
     }

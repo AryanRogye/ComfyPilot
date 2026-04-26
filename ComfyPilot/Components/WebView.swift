@@ -9,15 +9,14 @@ import SwiftUI
 import WebKit
 
 struct WebView: NSViewRepresentable {
-    
+
     let url: URL
-    @Binding var html: String
-    @Binding var links: [URL]
-    
+    var onPageLoaded: (URL?, String, String, [URL]) -> Void
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(html: $html, links: $links)
+        Coordinator(onPageLoaded: onPageLoaded)
     }
-    
+
     func makeNSView(context: Context) -> WKWebView {
         let webView = WKWebView()
         webView.navigationDelegate = context.coordinator
@@ -25,41 +24,44 @@ struct WebView: NSViewRepresentable {
         webView.load(URLRequest(url: url))
         return webView
     }
-    
+
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.lastLoadedURL != url else { return }
         context.coordinator.lastLoadedURL = url
         webView.load(URLRequest(url: url))
     }
-    
+
     final class Coordinator: NSObject, WKNavigationDelegate {
-        @Binding var html: String
-        @Binding var links: [URL]
+        var onPageLoaded: (URL?, String, String, [URL]) -> Void
         var lastLoadedURL: URL?
-        
-        init(html: Binding<String>, links: Binding<[URL]>) {
-            self._html = html
-            self._links = links
+
+        init(onPageLoaded: @escaping (URL?, String, String, [URL]) -> Void) {
+            self.onPageLoaded = onPageLoaded
         }
-        
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let currentURL = webView.url
+            lastLoadedURL = currentURL
+
             webView.evaluateJavaScript(Self.pageSnapshotJavaScript) { [weak self] result, _ in
                 guard
                     let snapshot = result as? [String: Any],
+                    let title = snapshot["title"] as? String,
                     let text = snapshot["text"] as? String,
                     let rawLinks = snapshot["links"] as? [[String: String]]
                 else { return }
-                
-                self?.links = rawLinks.compactMap { link in
+
+                let links: [URL] = rawLinks.compactMap { link in
                     guard let href = link["href"] else { return nil }
                     return URL(string: href)
                 }
-                self?.html = String(text.prefix(8_000))
+                self?.onPageLoaded(currentURL, title, String(text.prefix(8_000)), links)
             }
         }
-        
+
         private static let pageSnapshotJavaScript = """
         (() => {
+            const title = document.title || "";
             const visibleText = document.body?.innerText || "";
             const links = Array.from(document.links)
                 .map((link) => {
@@ -73,6 +75,7 @@ struct WebView: NSViewRepresentable {
                 .join("\\n");
 
             return {
+                title,
                 text: `${visibleText}\\n\\nLinks on this page:\\n${linkText}`,
                 links
             };

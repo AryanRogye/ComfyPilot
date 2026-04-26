@@ -9,6 +9,8 @@ import SwiftUI
 
 struct Sidebar: View {
     
+    @Bindable var webController: WebController
+    
     var backgroundColor: some ShapeStyle {
         LinearGradient(
             colors: [.pink.opacity(0.5), .red.opacity(0.5)],
@@ -18,20 +20,29 @@ struct Sidebar: View {
     }
     
     var body: some View {
-            VStack {
-//                ForEach(browserVM.tabs) { tab in
-//                    Text(tab.title)
-//                        .lineLimit(1)
-//                        .padding(6)
-//                        .frame(maxWidth: .infinity)
-//                        .background {
-//                            RoundedRectangle(cornerRadius: 6)
-//                                .fill(.white.opacity(0.3))
-//                        }
-//                        .padding(.horizontal, 4)
-//                }
-                Text("This is Sidebar")
-                    .foregroundStyle(.white)
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Tabs")
+                        .font(.headline)
+                    
+                    Spacer()
+                    
+                    Button {
+                        webController.createTab()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+                
+                ForEach(webController.tabs) { tab in
+                    tabRow(tab)
+                }
+                
+                Spacer()
             }
             .frame(
                 maxWidth: .infinity,
@@ -42,5 +53,43 @@ struct Sidebar: View {
                     .fill(backgroundColor)
                     .stroke(.white.opacity(0.3), style: .init(lineWidth: 1))
             }
+    }
+    
+    private func tabRow(_ tab: WebTab) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                webController.selectTab(tab.id)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe")
+                        .font(.caption)
+                    
+                    Text(tab.title)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                webController.closeTab(tab.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .opacity(webController.tabs.count > 1 ? 1 : 0)
+            .disabled(webController.tabs.count == 1)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(tab.id == webController.selectedTab?.id ? .white.opacity(0.28) : .white.opacity(0.12))
+        }
+        .padding(.horizontal, 6)
     }
 }
