@@ -12,8 +12,9 @@ struct ComfyPilotApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                ContentView()
+                Root()
             }
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }

@@ -11,20 +11,31 @@ import MLXKit
 struct Toolbar: ToolbarContent {
     
     @Bindable var loaderService : ModelLoaderService
+    var onToggleSidebar: () -> Void
+    var onToggleChat: () -> Void
     
     var body: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            NavigationLink(destination: ModelsInfoView(
-                loaderService: loaderService
-            )) {
-                Image(systemName: "arrow.down.circle")
+        
+        // LEFT side
+        ToolbarItem(placement: .navigation) {
+            Button(action: onToggleSidebar) {
+                Image(systemName: "sidebar.leading")
             }
         }
-        ToolbarItem(placement: .navigation) {
-            Button {
-                loaderService.openModelFolder()
-            } label: {
-                Image(systemName: "folder")
+        
+        // RIGHT side
+        ToolbarItem(placement: .primaryAction) {
+            Button(action: onToggleChat) {
+                Image(systemName: "message")
+            }
+        }
+        
+        // CENTER / STATUS area
+        ToolbarItemGroup(placement: .status) {
+            NavigationLink(
+                destination: ModelsInfoView(loaderService: loaderService)
+            ) {
+                Image(systemName: "arrow.down.circle")
             }
         }
     }

@@ -53,6 +53,13 @@ struct ModelsInfoView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    loaderService.openModelFolder()
+                } label: {
+                    Image(systemName: "folder")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     loaderService.sync()
                 } label: {
                     Image(systemName: "arrow.clockwise")
