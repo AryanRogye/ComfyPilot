@@ -15,143 +15,37 @@ import MLXKit
 final class ChatViewModel {
     
     /**
-     Prompt:
-     There was currently a new video by SideQuest Drew about exploring epsteins new island, can u look up the free version of the video?
-     
-     I’m trying to track down a specific JiDion video that includes a meta shout-out to Agent 00. In the video, JiDion actually anticipates that Agent will be reacting to the content on his stream. He looks directly at the camera and tells anyone watching via Agent’s ‘AMP’ stream that they should pause the reaction and go support the original upload on JiDion’s channel first. Does anyone have the link or know which video this was from?
+     * All Messages
      */
-    static let searchTool: [String: any Sendable] = [
-        "type": "function",
-        "function": [
-            "name": "search",
-            "description": "Search the web for information",
-            "parameters": [
-                "type": "object",
-                "properties": [
-                    "query": [
-                        "type": "string",
-                        "description": "The search query"
-                    ] as [String: any Sendable]
-                ] as [String: any Sendable],
-                "required": ["query"]
-            ] as [String: any Sendable]
-        ] as [String: any Sendable]
-    ]
-    
-    static let clickLinkTool: [String: any Sendable] = [
-        "type": "function",
-        "function": [
-            "name": "clickLink",
-            "description": "Open one of the numbered links from the current browser page.",
-            "parameters": [
-                "type": "object",
-                "properties": [
-                    "index": [
-                        "type": "integer",
-                        "description": "The 1-based number of the link to open from the current page's Links list."
-                    ] as [String: any Sendable]
-                ] as [String: any Sendable],
-                "required": ["index"]
-            ] as [String: any Sendable]
-        ] as [String: any Sendable]
-    ]
-    
     var messages: [ChatMessage] = []
+    
+    /// Flag to know if we are currently sending a message or not
     var sendingMessage = false
+    
+    /// Error Related
     var error: String?
     var showError = false
     
+    /// Callback the agent's use based off of the toolcall
     var onSearch: ((String) async -> String)?
     var onClickLink: ((Int) async -> String)?
     
+    /// Link Pattern lets us know if in a String what all of the urls are
     public static let linkPattern = #"\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)"#
     
-    private let mlxModelChatVM = MLXChatService()
+    /**
+     * Internal Service lets us talk to the MLX Model thats loaded
+     */
+    private let mlxChatService = MLXChatService()
     
-    public func load(_ url: URL) async {
-        do {
-            try await mlxModelChatVM.loadModel(at: url)
-        } catch {
-            self.error = error.localizedDescription
-            showError = true
-        }
-    }
-    
+    /**
+     * Computed Property to know if the MLX model is
+     * loaded or not
+     */
     var isLoaded: Bool {
-        mlxModelChatVM.isLoaded
+        mlxChatService.isLoaded
     }
-    
-    func send(_ prompt: String) {
-        guard isLoaded else { return }
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard !trimmed.isEmpty else { return }
-        guard !sendingMessage else { return }
-        
-        sendingMessage = true
-        
-        let userMessage = ChatMessage(role: .user, content: trimmed)
-        messages.append(userMessage)
-        
-        let assistantID = UUID()
-        messages.append(
-            ChatMessage(
-                id: assistantID,
-                role: .assistant,
-                content: ""
-            )
-        )
-        
-        Task {
-            /// at end set the false
-            defer {
-                Task { @MainActor in
-                    self.sendingMessage = false
-                }
-            }
-            
-            do {
-                let modelMessages = messages
-                    .filter { $0.id != assistantID }
-                    .map { ModelMessage(role: $0.role.rawValue, content: $0.content) }
-                
-                let _ = try await mlxModelChatVM.getResponse(
-                    messages: modelMessages,
-                    tools: [
-                        Self.searchTool,
-                        Self.clickLinkTool
-                    ],
-                    completion: { [weak self] (snippet: String) in
-                        guard let self else { return }
-                        Task { @MainActor in
-                            self.appendToAssistantMessage(
-                                id: assistantID,
-                                chunk: snippet
-                            )
-                        }
-                    },
-                    toolcallCompletionHandler: { toolcallResponse in
-                        Task { @MainActor in
-                            try await self.handleToolCall(toolcallResponse)
-                        }
-                    }
-                )
-            } catch let e as MLXModelChatVideoModelError {
-                await MainActor.run {
-                    self.error = self.message(for: e)
-                    self.showError = true
-                    self.removeAssistantMessageIfEmpty(id: assistantID)
-                }
-            } catch {
-                await MainActor.run {
-                    self.error = error.localizedDescription
-                    self.showError = true
-                    self.removeAssistantMessageIfEmpty(id: assistantID)
-                }
-            }
-        }
-    }
-    
+
     private func handleToolCall(
         _ response: ToolCallResponse,
         depth: Int = 0
@@ -217,15 +111,7 @@ final class ChatViewModel {
         
         modelMessages.append(ModelMessage(role: message.role.rawValue, content: message.content))
         
-        messages.append(
-            ChatMessage(
-                id: assistantID,
-                role: .assistant,
-                content: ""
-            )
-        )
-        
-        let _ = try await mlxModelChatVM.getResponse(
+        let _ = try await mlxChatService.getResponse(
             messages: modelMessages,
             tools: [
                 Self.searchTool,
@@ -248,14 +134,36 @@ final class ChatViewModel {
         )
     }
     
-    private func appendToAssistantMessage(id: UUID, chunk: String) {
-        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        messages[index].content += chunk
+    // MARK: - Helpers
+    
+    /**
+     * Function adds a message as a role user
+     */
+    private func addUserMessage(_ content: String) {
+        let userMessage = ChatMessage(
+            role: .user,
+            content: content
+        )
+        messages.append(userMessage)
     }
     
-    private func updateAssistantMessage(id: UUID, content: String) {
-        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        messages[index].content = content
+    /**
+     * Function Appends to assistant method if
+     * the message doesnt exist yet, it creates it as we go
+     * this is important
+     */
+    private func appendToAssistantMessage(id: UUID, chunk: String) {
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index].content += chunk
+        } else {
+            messages.append(
+                ChatMessage(
+                    id: id,
+                    role: .assistant,
+                    content: chunk
+                )
+            )
+        }
     }
     
     private func removeAssistantMessageIfEmpty(id: UUID) {
@@ -277,4 +185,153 @@ final class ChatViewModel {
             return "Not Loaded Cant Generate Response"
         }
     }
+}
+
+// MARK: - Loading Model
+extension ChatViewModel {
+    /**
+     * Loads The Model based off the URL provided
+     * sets error flags if anything goes wrong
+     */
+    public func load(_ url: URL) async {
+        do {
+            try await mlxChatService.loadModel(at: url)
+        } catch {
+            self.error = error.localizedDescription
+            showError = true
+        }
+    }
+}
+
+// MARK: - Send Chat
+extension ChatViewModel {
+    
+    /**
+     * Function sends prompt to the loaded MLX Model
+     */
+    func send(_ prompt: String) {
+        
+        /// Make sure the model is loaded
+        guard isLoaded else {
+            error = "Model Not Loaded Yet"
+            showError = true
+            return
+        }
+        
+        /// make sure we're not currently sending a message
+        guard !sendingMessage else { return }
+        
+        /// Trim Prompt and making sure its not empty
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        
+        /// set flag to true
+        sendingMessage = true
+        
+        /// Creates Users Message
+        self.addUserMessage(trimmed)
+        
+        let assistantID = UUID()
+        
+        Task {
+            /// at end set the false
+            defer {
+                Task { @MainActor in
+                    self.sendingMessage = false
+                }
+            }
+            
+            do {
+                /**
+                 * This removes the current assistant message you're about
+                 * to stream into
+                 */
+                let modelMessages = messages
+                    .filter { $0.id != assistantID }
+                    .map { ModelMessage(role: $0.role.rawValue, content: $0.content) }
+                
+                let _ = try await mlxChatService.getResponse(
+                    messages: modelMessages,
+                    tools: [
+                        Self.searchTool,
+                        Self.clickLinkTool
+                    ],
+                    completion: { [weak self] (snippet: String) in
+                        guard let self else { return }
+                        Task { @MainActor in
+                            self.appendToAssistantMessage(
+                                id: assistantID,
+                                chunk: snippet
+                            )
+                        }
+                    },
+                    toolcallCompletionHandler: { toolcallResponse in
+                        Task { @MainActor in
+                            try await self.handleToolCall(toolcallResponse)
+                        }
+                    }
+                )
+            } catch let e as MLXModelChatVideoModelError {
+                await MainActor.run {
+                    self.error = self.message(for: e)
+                    self.showError = true
+                    self.removeAssistantMessageIfEmpty(id: assistantID)
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    self.showError = true
+                    self.removeAssistantMessageIfEmpty(id: assistantID)
+                }
+            }
+        }
+    }
+}
+
+extension ChatViewModel {
+    /**
+     This section is my prompts that I use to get a toolcall to activate, most of these require searching
+     
+     Prompt:
+     What was the weather today in Chicago
+     
+     There was currently a new video by SideQuest Drew about exploring epsteins new island, can u look up the free version of the video?
+     
+     I’m trying to track down a specific JiDion video that includes a meta shout-out to Agent 00. In the video, JiDion actually anticipates that Agent will be reacting to the content on his stream. He looks directly at the camera and tells anyone watching via Agent’s ‘AMP’ stream that they should pause the reaction and go support the original upload on JiDion’s channel first. Does anyone have the link or know which video this was from?
+     */
+    static let searchTool: [String: any Sendable] = [
+        "type": "function",
+        "function": [
+            "name": "search",
+            "description": "Search the web for information",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "query": [
+                        "type": "string",
+                        "description": "The search query"
+                    ] as [String: any Sendable]
+                ] as [String: any Sendable],
+                "required": ["query"]
+            ] as [String: any Sendable]
+        ] as [String: any Sendable]
+    ]
+    
+    static let clickLinkTool: [String: any Sendable] = [
+        "type": "function",
+        "function": [
+            "name": "clickLink",
+            "description": "Open one of the numbered links from the current browser page.",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "index": [
+                        "type": "integer",
+                        "description": "The 1-based number of the link to open from the current page's Links list."
+                    ] as [String: any Sendable]
+                ] as [String: any Sendable],
+                "required": ["index"]
+            ] as [String: any Sendable]
+        ] as [String: any Sendable]
+    ]
 }
