@@ -21,6 +21,18 @@ public struct ToolMessage: MessageRepresentable, Sendable {
     public static func == (lhs: ToolMessage, rhs: ToolMessage) -> Bool {
         lhs.id == rhs.id
     }
+    
+    public init(functionName: String) {
+        self.id = UUID()
+        self.functionName = functionName
+        self.arguments = [:]
+    }
+    
+    public init(id: UUID = UUID(), functionName: String, arguments: [String : JSONValue]) {
+        self.id = id
+        self.functionName = functionName
+        self.arguments = arguments
+    }
 }
 
 public struct ChatMessage: MessageRepresentable, Sendable {

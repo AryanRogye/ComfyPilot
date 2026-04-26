@@ -17,7 +17,7 @@ final class ChatViewModel {
     /**
      * All Messages
      */
-    var messages: [ChatMessage] = []
+    var messages: [any MessageRepresentable] = []
     
     /// Flag to know if we are currently sending a message or not
     var sendingMessage = false
@@ -58,6 +58,13 @@ final class ChatViewModel {
         }
         
         let function = response.functionName
+        
+        messages.append(
+            ToolMessage(
+                functionName: response.functionName,
+                arguments: response.arguments
+            )
+        )
         
         switch function {
         case "clickLink":
@@ -107,6 +114,7 @@ final class ChatViewModel {
         let assistantID = UUID()
         var modelMessages = messages
             .filter { $0.id != assistantID }
+            .compactMap { $0 as? ChatMessage }
             .map { ModelMessage(role: $0.role, content: $0.content) }
         
         modelMessages.append(ModelMessage(role: message.role, content: message.content))
@@ -154,7 +162,11 @@ final class ChatViewModel {
      */
     private func appendToAssistantMessage(id: UUID, chunk: String) {
         if let index = messages.firstIndex(where: { $0.id == id }) {
-            messages[index].content += chunk
+            let message = messages[index]
+            if var m = message as? ChatMessage {
+                m.content += chunk
+                messages[index] = m
+            }
         } else {
             messages.append(
                 ChatMessage(
@@ -168,8 +180,11 @@ final class ChatViewModel {
     
     private func removeAssistantMessageIfEmpty(id: UUID) {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        if messages[index].content.isEmpty {
-            messages.remove(at: index)
+        let message = messages[index]
+        if let m = message as? ChatMessage {
+            if m.content.isEmpty {
+                messages.remove(at: index)
+            }
         }
     }
     
@@ -248,6 +263,7 @@ extension ChatViewModel {
                  */
                 let modelMessages = messages
                     .filter { $0.id != assistantID }
+                    .compactMap { $0 as? ChatMessage }
                     .map { ModelMessage(role: $0.role, content: $0.content) }
                 
                 let _ = try await mlxChatService.getResponse(

@@ -15,13 +15,40 @@ struct ChatListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 14) {
-                ForEach(chatVM.messages) { message in
-                    ChatBubbleRow(message: message)
+                ForEach(chatVM.messages, id: \.id) { message in
+                    if let m = message as? ChatMessage {
+                        ChatBubbleRow(message: m)
+                    }
+                    if let t = message as? ToolMessage {
+                        ToolMessageRow(message: t)
+                    }
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 16)
         }
+    }
+}
+
+private struct ToolMessageRow: View {
+    
+    let message: ToolMessage
+    
+    var body: some View {
+        HStack {
+            Text("Used \(message.functionName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background {
+                    Capsule()
+                        .fill(.thinMaterial)
+                }
+            
+            Spacer(minLength: 48)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
