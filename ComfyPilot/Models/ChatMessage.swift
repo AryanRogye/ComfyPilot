@@ -6,9 +6,26 @@
 //
 
 import Foundation
+import MLXLMCommon
+import MLXKit
 
-public struct ChatMessage: Identifiable, Equatable, Sendable {
-    public let id: UUID
+public protocol MessageRepresentable: Identifiable, Equatable {
+    var id: UUID { get set }
+}
+
+public struct ToolMessage: MessageRepresentable, Sendable {
+    public var id: UUID
+    public let functionName: String
+    public let arguments : [String: JSONValue]
+    
+    public static func == (lhs: ToolMessage, rhs: ToolMessage) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+public struct ChatMessage: MessageRepresentable, Sendable {
+    
+    public var id: UUID
     public let role: Role
     public var content: String
     
@@ -18,9 +35,9 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         self.content = content
     }
     
-    public enum Role: String, Sendable {
-        case user
-        case assistant
-        case system
+    public static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.role == rhs.role &&
+        lhs.content == rhs.content
     }
 }

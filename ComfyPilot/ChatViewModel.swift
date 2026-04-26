@@ -107,9 +107,9 @@ final class ChatViewModel {
         let assistantID = UUID()
         var modelMessages = messages
             .filter { $0.id != assistantID }
-            .map { ModelMessage(role: $0.role.rawValue, content: $0.content) }
+            .map { ModelMessage(role: $0.role, content: $0.content) }
         
-        modelMessages.append(ModelMessage(role: message.role.rawValue, content: message.content))
+        modelMessages.append(ModelMessage(role: message.role, content: message.content))
         
         let _ = try await mlxChatService.getResponse(
             messages: modelMessages,
@@ -248,7 +248,7 @@ extension ChatViewModel {
                  */
                 let modelMessages = messages
                     .filter { $0.id != assistantID }
-                    .map { ModelMessage(role: $0.role.rawValue, content: $0.content) }
+                    .map { ModelMessage(role: $0.role, content: $0.content) }
                 
                 let _ = try await mlxChatService.getResponse(
                     messages: modelMessages,

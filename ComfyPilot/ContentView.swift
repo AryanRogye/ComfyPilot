@@ -26,16 +26,10 @@ struct ContentView: View {
             WebView(url: webURL, html: $webHTML, links: $webLinks)
                 .frame(minWidth: 420)
             
-            VStack {
-                ChatListView(chatVM: vm)
-                    .safeAreaInset(edge: .bottom) {
-                        ChatInputBar(sendingMessage: $sendingMessage) { text in
-                            vm.send(text)
-                        }
-                        
-                    }
-                }
-            .frame(minWidth: 320)
+            ChatSidebar(
+                vm: vm,
+                sendingMessage: $sendingMessage
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar { Toolbar(loaderService: loaderService) }
