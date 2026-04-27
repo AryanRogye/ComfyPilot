@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MLXKit
+import MLXLMCommon
 
 struct ChatListView: View {
     
@@ -35,20 +36,93 @@ private struct ToolMessageRow: View {
     let message: ToolMessage
     
     var body: some View {
-        HStack {
-            Text("Used \(message.functionName)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background {
-                    Capsule()
-                        .fill(.thinMaterial)
+        DisclosureGroup {
+            ForEach(Array(message.arguments.keys.sorted()), id: \.self) { key in
+                if let value = message.arguments[key] {
+                    JSONValueView(key: key, value: value)
                 }
-            
-            Spacer(minLength: 48)
+            }
+            if let result = message.result {
+                VStack {
+                    Text("Result:")
+                    Text(result)
+                }
+            }
+        } label: {
+            HStack {
+                Text("Used \(message.functionName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background {
+                        Capsule()
+                            .fill(.thinMaterial)
+                    }
+                
+                Spacer(minLength: 48)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct JSONValueView: View {
+    let key: String?
+    let value: JSONValue
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            
+            if let key {
+                Text(key)
+                    .font(.headline)
+            }
+            
+            switch value {
+                
+            case .null:
+                Text("null").foregroundColor(.gray)
+                
+            case .bool(let b):
+                Text(b ? "true" : "false")
+                
+            case .int(let i):
+                Text("\(i)")
+                
+            case .double(let d):
+                Text("\(d)")
+                
+            case .string(let s):
+                Text("\"\(s)\"")
+                
+            case .array(let arr):
+                VStack(alignment: .leading) {
+                    Text("[")
+                    ForEach(Array(arr.enumerated()), id: \.offset) { index, item in
+                        JSONValueView(
+                            key: "[\(index)]",
+                            value: item
+                        )
+                        .padding(.leading, 10)
+                    }
+                    Text("]")
+                }
+                
+            case .object(let obj):
+                VStack(alignment: .leading) {
+                    Text("{")
+                    ForEach(obj.keys.sorted(), id: \.self) { key in
+                        JSONValueView(
+                            key: key,
+                            value: obj[key]!
+                        )
+                        .padding(.leading, 10)
+                    }
+                    Text("}")
+                }
+            }
+        }
     }
 }
 

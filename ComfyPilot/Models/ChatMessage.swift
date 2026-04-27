@@ -13,10 +13,14 @@ public protocol MessageRepresentable: Identifiable, Equatable {
     var id: UUID { get set }
 }
 
-public struct ToolMessage: MessageRepresentable, Sendable {
+@Observable
+public class ToolMessage: MessageRepresentable, Sendable {
     public var id: UUID
     public let functionName: String
     public let arguments : [String: JSONValue]
+    
+    /// Result for ToolCall
+    public var result: String?
     
     public static func == (lhs: ToolMessage, rhs: ToolMessage) -> Bool {
         lhs.id == rhs.id
@@ -35,7 +39,8 @@ public struct ToolMessage: MessageRepresentable, Sendable {
     }
 }
 
-public struct ChatMessage: MessageRepresentable, Sendable {
+@Observable
+public class ChatMessage: MessageRepresentable, Sendable {
     
     public var id: UUID
     public let role: Role

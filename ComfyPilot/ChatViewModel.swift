@@ -129,7 +129,7 @@ extension ChatViewModel {
                  * This removes the current assistant message you're about
                  * to stream into
                  */
-                var modelMessages = messages
+                let modelMessages = messages
                     .filter { $0.id != assistantID }
                     .compactMap { $0 as? ChatMessage }
                     .map { ModelMessage(role: $0.role, content: $0.content) }
@@ -140,7 +140,7 @@ extension ChatViewModel {
                     tools: [
                         Self.searchTool,
                         Self.clickLinkTool,
-                        Self.requestCurrentPageHTML
+                        Self.requestCurrentPageSnapshot
                     ],
                     completion: { [weak self] (snippet: String) in
                         guard let self else { return }
@@ -222,23 +222,12 @@ extension ChatViewModel {
         ] as [String: any Sendable]
     ]
     
-    static let requestCurrentPageHTML: [String: any Sendable] = [
+    static let requestCurrentPageSnapshot: [String: any Sendable] = [
         "type": "function",
         "function": [
-            "name": "requestCurrentPageHTML",
+            "name": "requestCurrentPageSnapshot",
             "description": """
-                           Retrieves the markdown content of the web page currently open in the user's browser.
-                           
-                           IMPORTANT: Call this tool automatically and immediately whenever:
-                           - The user mentions "this page", "current page", "this site", "what I'm looking at"
-                           - The user asks ANY question that could relate to browser content
-                           - The user says they are on a new page or has navigated somewhere
-                           - You are unsure what page the user is on
-                           
-                           Do NOT ask the user for the URL or page content.
-                           Do NOT ask for permission to access the page.
-                           Do NOT wait for the user to describe the page.
-                           Just call this tool first, then answer based on the result.
+                           Retrieves the snapshot of the web page currently open in the user's browser.
                            """,
             "parameters": [
                 "type": "object",
@@ -265,16 +254,19 @@ extension ChatViewModel {
         
         let function = response.functionName
         
-        messages.append(
-            ToolMessage(
-                functionName: response.functionName,
-                arguments: response.arguments
-            )
+        /// This is important because we need the id to send back the content
+        /// once we get it
+        let message = ToolMessage(
+            functionName: response.functionName,
+            arguments: response.arguments
         )
         
+        messages.append(message)
+        
         switch function {
-        case "requestCurrentPageHTML":
+        case "requestCurrentPageSnapshot":
             let html = await onGetCurrentHTMLContent?() ?? "No HTML available"
+            updateToolCall(id: message.id, result: html)
             try await respondToToolResult(
                 html,
                 label: "requested to get the html of",
@@ -284,6 +276,7 @@ extension ChatViewModel {
             if case .int(let index) = response.arguments["index"] {
                 let args = ClickTookArguments(index: index)
                 if let html = await onClickLink?(args.index) {
+                    updateToolCall(id: message.id, result: html)
                     try await respondToToolResult(
                         html,
                         label: "clicked on",
@@ -295,6 +288,7 @@ extension ChatViewModel {
             if case .string(let query) = response.arguments["query"] {
                 let args = SearchToolArguments(query: query)
                 if let html = await onSearch?(args.query) {
+                    updateToolCall(id: message.id, result: html)
                     try await respondToToolResult(
                         html,
                         label: "searched",
@@ -332,14 +326,13 @@ extension ChatViewModel {
             .map { ModelMessage(role: $0.role, content: $0.content) }
         
         modelMessages.append(ModelMessage(role: message.role, content: message.content))
-//        modelMessages.insert(ModelMessage(role: .system, content: Self.systemPrompt), at: 0)
         
         let _ = try await mlxChatService.getResponse(
             messages: modelMessages,
             tools: [
                 Self.searchTool,
                 Self.clickLinkTool,
-                Self.requestCurrentPageHTML
+                Self.requestCurrentPageSnapshot
             ],
             completion: { [weak self] (snippet: String) in
                 guard let self else { return }
@@ -434,6 +427,27 @@ extension ChatViewModel {
                     content: chunk
                 )
             )
+        }
+    }
+    
+    /**
+     * Updates the tool call UI after it's triggered.
+     *
+     * Normally, a tool call just shows that it was invoked.
+     * This allows us to:
+     * 1. Display the initial tool call
+     * 2. Wait for the async operation to complete
+     * 3. Update the UI with the result afterward
+     *
+     * Makes the interaction feel smoother and more dynamic.
+     */
+    private func updateToolCall(id: UUID, result: String) {
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            if var toolCall = messages[index] as? ToolMessage {
+                toolCall.result = result
+                messages[index] = toolCall
+                print("Updated Tool Call Result: \(result)")
+            }
         }
     }
     

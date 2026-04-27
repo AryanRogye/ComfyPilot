@@ -49,7 +49,6 @@ struct Root: View {
             vm.onSearch = { query in
                 await webController.loadSearchHTML(for: query)
             }
-
             vm.onClickLink = { index in
                 await webController.loadLinkHTML(at: index)
             }
@@ -92,6 +91,9 @@ struct Root: View {
                     url: tab.url,
                     onPageLoaded: { url, title, html, links in
                         webController.didLoadPage(for: tab.id, url: url, title: title, html: html, links: links)
+                    },
+                    onRunJSReady: { runner in
+                        webController.requestLiveJS[tab.id] = runner
                     },
                     onLiveHTMLReady: { getter in
                         webController.requestLiveHTML[tab.id] = getter

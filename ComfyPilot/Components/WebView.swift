@@ -12,6 +12,7 @@ struct WebView: NSViewRepresentable {
     
     let url: URL
     var onPageLoaded: (URL?, String, String, [URL]) -> Void
+    var onRunJSReady: (((@escaping (String) async -> String) -> Void))? = nil
     var onLiveHTMLReady: (((@escaping () async -> String) -> Void))? = nil
     
     func makeCoordinator() -> Coordinator {
@@ -25,6 +26,7 @@ struct WebView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.lastLoadedURL = url
         
+        onRunJSReady?(context.coordinator.runJavaScript)
         onLiveHTMLReady?(context.coordinator.currentHTML)
         
         webView.load(URLRequest(url: url))
@@ -83,6 +85,30 @@ struct WebView: NSViewRepresentable {
                 }
                 
                 self?.onPageLoaded(currentURL, title, String(text.prefix(8_000)), links)
+            }
+        }
+        
+        @MainActor
+        func runJavaScript(_ js: String) async -> String {
+            guard let webView else {
+                return "No active web view."
+            }
+            
+            return await withCheckedContinuation { continuation in
+                webView.evaluateJavaScript(js) { result, error in
+                    if let error {
+                        continuation.resume(returning: "JavaScript error: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    if let string = result as? String {
+                        continuation.resume(returning: string)
+                    } else if let result {
+                        continuation.resume(returning: String(describing: result))
+                    } else {
+                        continuation.resume(returning: "")
+                    }
+                }
             }
         }
         
